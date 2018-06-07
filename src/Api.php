@@ -1,5 +1,5 @@
 <?php
-# Copyright (c) 2013-2016, OVH SAS.
+# Copyright (c) 2013-2017, OVH SAS.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -30,14 +30,9 @@
 
 namespace Ovh;
 
-use Psr\Http\Message\RequestInterface;
-use Psr\Http\Message\ResponseInterface;
-use GuzzleHttp\Psr7\Uri;
+use GuzzleHttp\Client;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
-use Http\Client\HttpClient;
-use Http\Message\MessageFactory;
-use Http\Discovery\HttpClientDiscovery;
 
 /**
  * Wrapper to manage login and exchanges with simpliest Ovh API
@@ -60,6 +55,7 @@ class Api
     private $endpoints = [
         'ovh-eu'        => 'https://eu.api.ovh.com/1.0',
         'ovh-ca'        => 'https://ca.api.ovh.com/1.0',
+        'ovh-us'        => 'https://api.ovh.us/1.0',
         'kimsufi-eu'    => 'https://eu.api.kimsufi.com/1.0',
         'kimsufi-ca'    => 'https://ca.api.kimsufi.com/1.0',
         'soyoustart-eu' => 'https://eu.api.soyoustart.com/1.0',
@@ -105,7 +101,7 @@ class Api
     /**
      * Contain http client connection
      *
-     * @var HttpClient
+     * @var Client
      */
     private $http_client = null;
 
@@ -119,7 +115,7 @@ class Api
      * @param string $api_endpoint       name of api selected
      * @param string $consumer_key       If you have already a consumer key, this parameter prevent to do a
      *                                   new authentication
-     * @param HttpClient $http_client        instance of http client
+     * @param Client $http_client        instance of http client
      *
      * @throws Exceptions\InvalidParameterException if one parameter is missing or with bad value
      */
@@ -128,26 +124,35 @@ class Api
         $application_secret,
         $api_endpoint,
         $consumer_key = null,
-        HttpClient $http_client = null
+        Client $http_client = null
     ) {
-        if (!isset($application_key)) {
-            throw new Exceptions\InvalidParameterException("Application key parameter is empty");
-        }
-
-        if (!isset($application_secret)) {
-            throw new Exceptions\InvalidParameterException("Application secret parameter is empty");
-        }
-
         if (!isset($api_endpoint)) {
             throw new Exceptions\InvalidParameterException("Endpoint parameter is empty");
         }
 
-        if (!array_key_exists($api_endpoint, $this->endpoints)) {
-            throw new Exceptions\InvalidParameterException("Unknown provided endpoint");
+        if (preg_match('/^https?:\/\/..*/',$api_endpoint))
+        {
+          $this->endpoint         = $api_endpoint;
+        }
+        else
+        {
+          if (!array_key_exists($api_endpoint, $this->endpoints)) {
+              throw new Exceptions\InvalidParameterException("Unknown provided endpoint");
+          }
+          else
+          {
+            $this->endpoint       = $this->endpoints[$api_endpoint];
+          }
+        }
+
+        if (!isset($http_client)) {
+            $http_client = new Client([
+                'timeout'         => 30,
+                'connect_timeout' => 5,
+            ]);
         }
 
         $this->application_key    = $application_key;
-        $this->endpoint           = $this->endpoints[$api_endpoint];
         $this->application_secret = $application_secret;
         $this->http_client        = $http_client;
         $this->consumer_key       = $consumer_key;
@@ -157,7 +162,7 @@ class Api
     /**
      * Calculate time delta between local machine and API's server
      *
-     * @throws \Http\Exception\TransferException if http request is an error
+     * @throws \GuzzleHttp\Exception\ClientException if http request is an error
      * @return int
      */
     private function calculateTimeDelta()
@@ -184,7 +189,7 @@ class Api
      * @param string $redirection url to redirect on your website after authentication
      *
      * @return mixed
-     * @throws \Http\Exception\TransferException if http request is an error
+     * @throws \GuzzleHttp\Exception\ClientException if http request is an error
      */
     public function requestCredentials(
         array $accessRules,
@@ -219,16 +224,25 @@ class Api
      * @param bool                 $is_authenticated if the request use authentication
      *
      * @return array
-     * @throws \Http\Exception\TransferException if http request is an error
+     * @throws \GuzzleHttp\Exception\ClientException if http request is an error
      */
-    private function rawCall($method, $path, $content = null, $is_authenticated = true, $headers = null)
+    protected function rawCall($method, $path, $content = null, $is_authenticated = true, $headers = null)
     {
-        $url     = $this->endpoint . $path;
-        $uri = new Uri($url);
-        $body = null;
+        if ( $is_authenticated )
+        {
+            if (!isset($this->application_key)) {
+                throw new Exceptions\InvalidParameterException("Application key parameter is empty");
+            }
 
+            if (!isset($this->application_secret)) {
+                throw new Exceptions\InvalidParameterException("Application secret parameter is empty");
+            }
+        }
+
+        $url     = $this->endpoint . $path;
+        $request = new Request($method, $url);
         if (isset($content) && $method == 'GET') {
-            $query_string = $uri->getQuery();
+            $query_string = $request->getUri()->getQuery();
 
             $query = array();
             if (!empty($query_string)) {
@@ -251,17 +265,27 @@ class Api
             }
 
             $query = \GuzzleHttp\Psr7\build_query($query);
-            $uri     = $uri->withQuery($query);
+
+            $url     = $request->getUri()->withQuery($query);
+            $request = $request->withUri($url);
+            $body    = "";
         } elseif (isset($content)) {
-            $body = json_encode($content);
+            $body = json_encode($content, JSON_UNESCAPED_SLASHES);
+
+            $request->getBody()->write($body);
+        } else {
+            $body = "";
         }
-        if (!is_array($headers)) {
+        if(!is_array($headers))
+        {
             $headers = [];
         }
         $headers['Content-Type']      = 'application/json; charset=utf-8';
-        $headers['X-Ovh-Application'] = $this->application_key;
 
         if ($is_authenticated) {
+
+            $headers['X-Ovh-Application'] = $this->application_key;
+
             if (!isset($this->time_delta)) {
                 $this->calculateTimeDelta();
             }
@@ -278,13 +302,8 @@ class Api
             }
         }
 
-        /** @var ResponseInterface $response */
-        return $this->sendRequest(new Request(
-            $method,
-            $uri,
-            $headers,
-            $body
-        ));
+        /** @var Response $response */
+        return $this->http_client->send($request, ['headers' => $headers]);
     }
 
     /**
@@ -304,15 +323,27 @@ class Api
      *
      * @param string $path    path ask inside api
      * @param array  $content content to send inside body of request
+     * @param array  headers  custom HTTP headers to add on the request
+     * @param bool   is_authenticated   if the request need to be authenticated
      *
      * @return array
-     * @throws \Http\Exception\TransferException if http request is an error
+     * @throws \GuzzleHttp\Exception\ClientException if http request is an error
      */
-    public function get($path, $content = null, $headers = null)
+    public function get($path, $content = null, $headers = null, $is_authenticated = true)
     {
-        return $this->decodeResponse(
-            $this->rawCall("GET", $path, $content, true, $headers)
-        );
+        if(preg_match('/^\/[^\/]+\.json$/', $path))
+        {
+          // Schema description must be access without authentication
+          return $this->decodeResponse(
+              $this->rawCall("GET", $path, $content, false, $headers)
+          );
+        }
+        else
+        {
+          return $this->decodeResponse(
+              $this->rawCall("GET", $path, $content, $is_authenticated, $headers)
+          );
+        }
     }
 
     /**
@@ -320,14 +351,16 @@ class Api
      *
      * @param string $path    path ask inside api
      * @param array  $content content to send inside body of request
+     * @param array  headers  custom HTTP headers to add on the request
+     * @param bool   is_authenticated   if the request need to be authenticated
      *
      * @return array
-     * @throws \Http\Exception\TransferException if http request is an error
+     * @throws \GuzzleHttp\Exception\ClientException if http request is an error
      */
-    public function post($path, $content = null, $headers = null)
+    public function post($path, $content = null, $headers = null, $is_authenticated = true)
     {
         return $this->decodeResponse(
-            $this->rawCall("POST", $path, $content, true, $headers)
+            $this->rawCall("POST", $path, $content, $is_authenticated, $headers)
         );
     }
 
@@ -336,14 +369,16 @@ class Api
      *
      * @param string $path    path ask inside api
      * @param array  $content content to send inside body of request
+     * @param array  headers  custom HTTP headers to add on the request
+     * @param bool   is_authenticated   if the request need to be authenticated
      *
      * @return array
-     * @throws \Http\Exception\TransferException if http request is an error
+     * @throws \GuzzleHttp\Exception\ClientException if http request is an error
      */
-    public function put($path, $content, $headers = null)
+    public function put($path, $content, $headers = null, $is_authenticated = true)
     {
         return $this->decodeResponse(
-            $this->rawCall("PUT", $path, $content, true, $headers)
+            $this->rawCall("PUT", $path, $content, $is_authenticated, $headers)
         );
     }
 
@@ -352,20 +387,21 @@ class Api
      *
      * @param string $path    path ask inside api
      * @param array  $content content to send inside body of request
+     * @param array  headers  custom HTTP headers to add on the request
+     * @param bool   is_authenticated   if the request need to be authenticated
      *
      * @return array
-     * @throws \Http\Exception\TransferException if http request is an error
+     * @throws \GuzzleHttp\Exception\ClientException if http request is an error
      */
-    public function delete($path, $content = null, $headers = null)
+    public function delete($path, $content = null, $headers = null, $is_authenticated = true)
     {
         return $this->decodeResponse(
-            $this->rawCall("DELETE", $path, $content, true, $headers)
+            $this->rawCall("DELETE", $path, $content, $is_authenticated, $headers)
         );
     }
 
     /**
      * Get the current consumer key
-     * @return string
      */
     public function getConsumerKey()
     {
@@ -374,24 +410,9 @@ class Api
 
     /**
      * Return instance of http client
-     * @return HttpClient
      */
     public function getHttpClient()
     {
-        if ($this->http_client === null) {
-            $this->http_client = HttpClientDiscovery::find();
-        }
-
         return $this->http_client;
-    }
-
-    /**
-     * Send the Request through the HttpClient
-     * @param  RequestInterface $request
-     * @return ResponseInterface
-     */
-    private function sendRequest(RequestInterface $request)
-    {
-        return $this->getHttpClient()->sendRequest($request);
     }
 }

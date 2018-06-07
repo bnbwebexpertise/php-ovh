@@ -1,5 +1,5 @@
 <?php
-# Copyright (c) 2013-2016, OVH SAS.
+# Copyright (c) 2013-2017, OVH SAS.
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -118,8 +118,14 @@ class ApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testMissingApplicationKey()
     {
+<<<<<<< HEAD
         $this->setExpectedException('Ovh\Exceptions\InvalidParameterException', 'Application key');
         new Api(null, $this->application_secret, $this->endpoint, $this->consumer_key, $this->client);
+=======
+        $this->setExpectedException('\\Ovh\\Exceptions\\InvalidParameterException', 'Application key');
+        $api = new Api(null, $this->application_secret, $this->endpoint, $this->consumer_key, $this->client);
+        $api->get('/me');
+>>>>>>> master
     }
 
     /**
@@ -127,8 +133,35 @@ class ApiTest extends \PHPUnit_Framework_TestCase
      */
     public function testMissingApplicationSecret()
     {
+<<<<<<< HEAD
         $this->setExpectedException('Ovh\Exceptions\InvalidParameterException', 'Application secret');
         new Api($this->application_key, null, $this->endpoint, $this->consumer_key, $this->client);
+=======
+        $this->setExpectedException('\\Ovh\\Exceptions\\InvalidParameterException', 'Application secret');
+        $api = new Api($this->application_key, null, $this->endpoint, $this->consumer_key, $this->client);
+        $api->get('/me');
+    }
+
+    /**
+     * Test we don't check Application Key for unauthenticated call
+     */
+    public function testNoCheckAppKeyForUnauthCall()
+    {
+        $handlerStack = $this->client->getConfig('handler');
+        $handlerStack->push(Middleware::mapRequest(function (Request $request) {
+            if($request->getUri()->getPath() == "/1.0/unauthcall") {
+                return $request;
+            }
+
+            $request = $request->withUri($request->getUri()
+                ->withHost('httpbin.org')
+                ->withPath('/')
+                ->withQuery(''));
+            return $request;
+        }));
+        $api = new Api(NULL, NULL, $this->endpoint, $this->consumer_key, $this->client);
+        $api->get('/1.0/unauthcall', null, null, false);
+>>>>>>> master
     }
 
     /**
@@ -357,6 +390,108 @@ class ApiTest extends \PHPUnit_Framework_TestCase
 
         $api = new Api($this->application_key, $this->application_secret, $this->endpoint, $this->consumer_key, $this->client);
         $api->get('/me/api/credential', ['dryRun' => true, 'notDryRun' => false]);
+    }
+
+    /**
+     * Test valid predefined endpoint
+     */
+    public function testPredefinedEndPoint()
+    {
+        $handlerStack = $this->client->getConfig('handler');
+        $handlerStack->push(Middleware::mapRequest(function (Request $request) {
+            if($request->getUri()->getPath() == "/1.0/auth/time") {
+                return $request;
+            }
+
+            $host = $request->getUri()->getHost();
+            $this->assertEquals($host, 'ca.api.ovh.com');
+
+            $resource = $request->getUri()->getPath();
+            $this->assertEquals($resource, '/1.0/me/api/credential');
+
+            $resource = $request->getUri()->getScheme();
+            $this->assertEquals($resource, 'https');
+
+            $request = $request->withUri($request->getUri()
+                ->withHost('httpbin.org')
+                ->withPath('/')
+                ->withQuery(''));
+            return $request;
+        }));
+        //$handlerStack->push(Middleware::mapResponse(function (Response $response) {
+        //    return $response;
+        //}));
+
+        $api = new Api($this->application_key, $this->application_secret, 'ovh-ca', $this->consumer_key, $this->client);
+        $api->get('/me/api/credential');
+    }
+
+    /**
+     * Test valid provided HTTP endpoint
+     */
+    public function testProvidedHttpEndPoint()
+    {
+        $handlerStack = $this->client->getConfig('handler');
+        $handlerStack->push(Middleware::mapRequest(function (Request $request) {
+            if($request->getUri()->getPath() == "/1.0/auth/time") {
+                return $request;
+            }
+
+            $host = $request->getUri()->getHost();
+            $this->assertEquals($host, 'api.ovh.com');
+
+            $resource = $request->getUri()->getPath();
+            $this->assertEquals($resource, '/1.0/me/api/credential');
+
+            $resource = $request->getUri()->getScheme();
+            $this->assertEquals($resource, 'http');
+
+            $request = $request->withUri($request->getUri()
+                ->withHost('httpbin.org')
+                ->withPath('/')
+                ->withQuery(''));
+            return $request;
+        }));
+        //$handlerStack->push(Middleware::mapResponse(function (Response $response) {
+        //    return $response;
+        //}));
+
+        $api = new Api($this->application_key, $this->application_secret, 'http://api.ovh.com/1.0', $this->consumer_key, $this->client);
+        $api->get('/me/api/credential');
+    }
+
+    /**
+     * Test valid provided HTTPS endpoint
+     */
+    public function testProvidedHttpsEndPoint()
+    {
+        $handlerStack = $this->client->getConfig('handler');
+        $handlerStack->push(Middleware::mapRequest(function (Request $request) {
+            if($request->getUri()->getPath() == "/1.0/auth/time") {
+                return $request;
+            }
+
+            $host = $request->getUri()->getHost();
+            $this->assertEquals($host, 'api.ovh.com');
+
+            $resource = $request->getUri()->getPath();
+            $this->assertEquals($resource, '/1.0/me/api/credential');
+
+            $resource = $request->getUri()->getScheme();
+            $this->assertEquals($resource, 'https');
+
+            $request = $request->withUri($request->getUri()
+                ->withHost('httpbin.org')
+                ->withPath('/')
+                ->withQuery(''));
+            return $request;
+        }));
+        //$handlerStack->push(Middleware::mapResponse(function (Response $response) {
+        //    return $response;
+        //}));
+
+        $api = new Api($this->application_key, $this->application_secret, 'https://api.ovh.com/1.0', $this->consumer_key, $this->client);
+        $api->get('/me/api/credential');
     }
 
 }
