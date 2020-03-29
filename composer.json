@@ -1,5 +1,5 @@
 {
-    "name": "ovh/ovh",
+    "name": "bnbwebexpertise/php-ovh",
     "description": "Wrapper for OVH APIs",
     "license": "BSD-3-Clause",
     "require": {
