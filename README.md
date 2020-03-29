@@ -249,6 +249,14 @@ Supported APIs
  * Create application credentials: https://eu.api.ovh.com/createApp/
  * Create script credentials (all keys at once): https://eu.api.ovh.com/createToken/
 
+## OVH US
+
+ * ```$endpoint = 'ovh-us';```
+ * Documentation: https://api.us.ovhcloud.com/
+ * Console: https://api.us.ovhcloud.com/console
+ * Create application credentials: https://api.us.ovhcloud.com/createApp/
+ * Create script credentials (all keys at once): https://api.us.ovhcloud.com/createToken/
+
 ## OVH North America
 
  * ```$endpoint = 'ovh-ca';```
