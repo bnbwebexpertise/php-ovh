@@ -31,6 +31,7 @@
 namespace Ovh;
 
 use GuzzleHttp\Client;
+use GuzzleHttp\Psr7\Query;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 
@@ -249,7 +250,7 @@ class Api
                 }
             }
 
-            $query = \GuzzleHttp\Psr7\build_query($query);
+            $query = Query::build($query);
 
             $url     = $request->getUri()->withQuery($query);
             $request = $request->withUri($url);
